@@ -64,7 +64,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Pull data with DVC
-        run: dvc pull data/train_phase1.csv.dvc data/eval.csv.dvc
+        run: dvc pull data/train_phase1.csv.dvc data/train_phase2.csv.dvc data/eval.csv.dvc
 
       - name: Train model
         run: |

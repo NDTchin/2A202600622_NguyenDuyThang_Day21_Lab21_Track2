@@ -6,7 +6,13 @@ import mlflow
 import mlflow.sklearn
 import pandas as pd
 import yaml
-from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.ensemble import (
+    ExtraTreesClassifier,
+    GradientBoostingClassifier,
+    HistGradientBoostingClassifier,
+    RandomForestClassifier,
+    VotingClassifier,
+)
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
@@ -19,8 +25,11 @@ EVAL_THRESHOLD = 0.70
 CLASS_LABELS = [0, 1, 2]
 MODEL_TYPES = {
     "random_forest",
+    "extra_trees",
     "gradient_boosting",
+    "hist_gradient_boosting",
     "logistic_regression",
+    "voting_rf_et",
 }
 
 
@@ -38,6 +47,16 @@ def build_model(params: dict):
             max_depth=params.get("max_depth"),
             min_samples_split=params.get("min_samples_split", 2),
             random_state=42,
+            n_jobs=-1,
+        )
+
+    if model_type == "extra_trees":
+        return ExtraTreesClassifier(
+            n_estimators=params.get("n_estimators", 100),
+            max_depth=params.get("max_depth"),
+            min_samples_split=params.get("min_samples_split", 2),
+            random_state=42,
+            n_jobs=-1,
         )
 
     if model_type == "gradient_boosting":
@@ -47,11 +66,52 @@ def build_model(params: dict):
             random_state=42,
         )
 
+    if model_type == "hist_gradient_boosting":
+        return HistGradientBoostingClassifier(
+            max_depth=params.get("max_depth"),
+            learning_rate=params.get("learning_rate", 0.1),
+            max_iter=params.get("max_iter", 200),
+            random_state=42,
+        )
+
+    if model_type == "voting_rf_et":
+        rf = RandomForestClassifier(
+            n_estimators=params.get("n_estimators", 800),
+            max_depth=params.get("max_depth"),
+            min_samples_split=params.get("min_samples_split", 2),
+            random_state=42,
+            n_jobs=-1,
+        )
+        et = ExtraTreesClassifier(
+            n_estimators=params.get("et_n_estimators", params.get("n_estimators", 800)),
+            max_depth=params.get("et_max_depth", params.get("max_depth")),
+            min_samples_split=params.get("et_min_samples_split", params.get("min_samples_split", 2)),
+            random_state=42,
+            n_jobs=-1,
+        )
+        return VotingClassifier(
+            estimators=[("rf", rf), ("et", et)],
+            voting=params.get("voting", "hard"),
+        )
+
     return LogisticRegression(
         max_iter=params.get("max_iter", 1000),
         multi_class="auto",
         random_state=42,
     )
+
+
+def load_training_data(data_path: str, params: dict) -> pd.DataFrame:
+    df_train = pd.read_csv(data_path)
+    include_phase2 = params.get("include_phase2_data", False)
+    phase2_path = params.get("phase2_data_path", "data/train_phase2.csv")
+
+    if include_phase2 and os.path.exists(phase2_path):
+        df_phase2 = pd.read_csv(phase2_path)
+        df_train = pd.concat([df_train, df_phase2], ignore_index=True)
+        print(f"Merged additional training data from {phase2_path}: total rows = {len(df_train)}")
+
+    return df_train
 
 
 def make_distribution(y_train: pd.Series) -> dict:
@@ -99,19 +159,7 @@ def train(
     data_path: str = "data/train_phase1.csv",
     eval_path: str = "data/eval.csv",
 ) -> float:
-    """
-    Huan luyen mo hinh va ghi nhan ket qua vao MLflow.
-
-    Tham so:
-        params     : dict chua cac sieu tham so cho model.
-        data_path  : duong dan den file du lieu huan luyen.
-        eval_path  : duong dan den file du lieu danh gia.
-
-    Tra ve:
-        accuracy (float): do chinh xac tren tap danh gia.
-    """
-
-    df_train = pd.read_csv(data_path)
+    df_train = load_training_data(data_path, params)
     df_eval = pd.read_csv(eval_path)
 
     X_train = df_train.drop(columns=["target"])
