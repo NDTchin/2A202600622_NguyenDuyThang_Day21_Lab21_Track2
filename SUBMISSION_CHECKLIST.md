@@ -14,6 +14,11 @@
 - Whether Step 3 improved the model after adding data.
 - Any issue faced with DVC, GitHub Actions, or VM deployment and how you solved it.
 
+## Current local benchmark
+- Best local result found so far: RandomForest with `n_estimators=300`, `max_depth=None`, `min_samples_split=2`.
+- Observed local metrics: `accuracy ~= 0.682`, `f1_score ~= 0.681`.
+- This means the repo is technically ready, but the `0.70` eval gate may still require more tuning or benefit from the expanded Step 3 dataset.
+
 ## Bonus evidence
 - Bonus 2: show MLflow runs from at least 2 model types.
 - Bonus 3: show `outputs/report.txt` in GitHub Actions artifact.

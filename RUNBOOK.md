@@ -3,7 +3,7 @@
 ## 1. Local setup
 ```powershell
 cd D:\Vin\Lab\Day21-Track2-CI-CD-for-AI-Systems
-py -3.10 -m venv .venv
+py -3.12 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
@@ -42,6 +42,22 @@ model_type: gradient_boosting
 n_estimators: 150
 learning_rate: 0.1
 ```
+
+Best local configuration found so far:
+```yaml
+model_type: random_forest
+n_estimators: 300
+max_depth:
+min_samples_split: 2
+```
+
+Observed local result on `data/eval.csv`:
+- `accuracy`: about `0.682`
+- `f1_score`: about `0.681`
+
+Note:
+- The CI eval gate is still `0.70` as required by the lab.
+- With the current local benchmark, the codebase is ready, but the pipeline may still stop at `Eval` until a stronger configuration or better training data setup is found.
 
 ## 3. DVC and GCP setup
 ```powershell
