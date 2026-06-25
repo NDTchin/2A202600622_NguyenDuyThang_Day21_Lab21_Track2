@@ -1,0 +1,4 @@
+[core]
+    remote = myremote
+['remote "myremote"']
+    url = gs://clean-evening-499803-c3-day21-track2-2a202600622/dvc

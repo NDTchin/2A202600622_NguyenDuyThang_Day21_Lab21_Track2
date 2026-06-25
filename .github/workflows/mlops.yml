@@ -12,6 +12,17 @@ on:
       - '.github/workflows/mlops.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: clean-evening-499803-c3
+  GCP_PROJECT_NUMBER: "650265798232"
+  GCP_BUCKET: clean-evening-499803-c3-day21-track2-2a202600622
+  GCP_SERVICE_ACCOUNT: mlops-lab-sa@clean-evening-499803-c3.iam.gserviceaccount.com
+  GCP_WIF_PROVIDER: projects/650265798232/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+
 jobs:
   test:
     name: Unit Test
@@ -21,7 +32,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.12"
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -41,21 +52,26 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.12"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
 
       - name: Install dependencies
         run: pip install -r requirements.txt
-
-      - name: Authenticate to Cloud Storage
-        run: |
-          echo '${{ secrets.CLOUD_CREDENTIALS }}' > /tmp/sa-key.json
-          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa-key.json" >> $GITHUB_ENV
 
       - name: Pull data with DVC
         run: dvc pull data/train_phase1.csv.dvc data/eval.csv.dvc
 
       - name: Train model
-        run: python src/train.py
+        run: |
+          export MLFLOW_TRACKING_URI=sqlite:///mlflow.db
+          export MLFLOW_ARTIFACT_ROOT=./mlartifacts
+          python src/train.py
+        shell: bash
 
       - name: Read metrics
         id: read_metrics
@@ -84,7 +100,13 @@ jobs:
     steps:
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.12"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
 
       - name: Install evaluation dependency
         run: pip install google-cloud-storage
@@ -95,19 +117,14 @@ jobs:
           name: outputs-artifact
           path: artifact_outputs
 
-      - name: Authenticate to Cloud Storage
-        run: |
-          echo '${{ secrets.CLOUD_CREDENTIALS }}' > /tmp/sa-key.json
-          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa-key.json" >> $GITHUB_ENV
-
       - name: Download previous production metrics
         run: |
           python - <<'EOF'
           from google.cloud import storage
           from google.api_core.exceptions import NotFound
 
-          client = storage.Client()
-          bucket = client.bucket("${{ secrets.CLOUD_BUCKET }}")
+          client = storage.Client(project="${{ env.GCP_PROJECT_ID }}")
+          bucket = client.bucket("${{ env.GCP_BUCKET }}")
           blob = bucket.blob("models/latest/metrics.json")
           try:
               blob.download_to_filename("previous_metrics.json")
@@ -155,7 +172,13 @@ jobs:
     steps:
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.12"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
 
       - name: Install deploy dependency
         run: pip install google-cloud-storage
@@ -172,18 +195,13 @@ jobs:
           name: model-artifact
           path: artifact_model
 
-      - name: Authenticate to Cloud Storage
-        run: |
-          echo '${{ secrets.CLOUD_CREDENTIALS }}' > /tmp/sa-key.json
-          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa-key.json" >> $GITHUB_ENV
-
       - name: Upload approved model and metrics to Cloud Storage
         run: |
           python - <<'EOF'
           from google.cloud import storage
 
-          client = storage.Client()
-          bucket = client.bucket("${{ secrets.CLOUD_BUCKET }}")
+          client = storage.Client(project="${{ env.GCP_PROJECT_ID }}")
+          bucket = client.bucket("${{ env.GCP_BUCKET }}")
 
           bucket.blob("models/latest/model.pkl").upload_from_filename("artifact_model/model.pkl")
           bucket.blob("models/latest/metrics.json").upload_from_filename("artifact_outputs/metrics.json")
@@ -199,7 +217,7 @@ jobs:
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
             sudo systemctl restart mlops-serve
-            sleep 5
+            sleep 8
             for i in 1 2 3 4 5; do
               if curl -sf http://localhost:8000/health; then
                 echo "Health check passed."
@@ -208,4 +226,5 @@ jobs:
               sleep 3
             done
             echo "Health check failed after restart."
+            sudo journalctl -u mlops-serve -n 50 --no-pager
             exit 1
